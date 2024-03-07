@@ -16,12 +16,24 @@ public class Main {
         User user3 = new User("Andrew", "Andreev", (byte) 18);
         User user4 = new User("Steph", "Curry", (byte) 35);
 
-        List<User> users = service.getAllUsers();
-        for (User u : users) {
-            System.out.println(u);
-        }
+        List<User> listIn = List.of(user1, user2, user3, user4);
+
+        listIn.forEach(user -> service.saveUser(user.getName(), user.getLastName(), user.getAge()));
+
+        List<User> userOut = service.getAllUsers();
+        userOut.forEach(System.out::println);
+
         service.cleanUsersTable();
+
         service.dropUsersTable();
+
+        try {
+            Util.getConnection().close();
+            Util.getFactory().close();
+        } catch (Exception e) {
+            System.out.println("Произошла ошибка закрытия соединения с БД.");
+            System.out.println(e);
+        }
     }
 }
 

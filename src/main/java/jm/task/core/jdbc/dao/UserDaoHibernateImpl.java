@@ -1,13 +1,14 @@
 package jm.task.core.jdbc.dao;
 
 import jm.task.core.jdbc.model.User;
+import jm.task.core.jdbc.util.GetSQLQueryUsersTemplate;
 import jm.task.core.jdbc.util.Util;
+import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
-import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.query.Query;
 
-import java.sql.ResultSet;
+import javax.persistence.spi.PersistenceUnitTransactionType;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,85 +17,152 @@ public class UserDaoHibernateImpl implements UserDao {
 
     }
 
-    private final SessionFactory sessionFactory = Util.getHibernate();
 
     @Override
     public void createUsersTable() {
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+        ) {
+            transaction = session.beginTransaction();
+            session.createSQLQuery(GetSQLQueryUsersTemplate.CREATE_TABLE).executeUpdate();
+            transaction.commit();
 
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        session.createSQLQuery("CREATE TABLE IF NOT EXISTS Users (\n" +
-                "            id BIGSERIAL PRIMARY KEY ,\n" +
-                "            name VARCHAR (100) ,\n" +
-                "            last_name VARCHAR(150) ,\n" +
-                "            age SMALLINT NOT NULL \n" +
-                "            )").executeUpdate();
-        session.getTransaction().commit();
-        session.close();
+            System.out.println("Таблица 'users' успешно создана.");
+        } catch (Exception e) {
+            if (transaction != null)
+                transaction.rollback();
 
-        System.out.println("Таблица создана!");
+            System.out.println("Проблема с созданием таблицы в Базе Данных.");
+            e.printStackTrace();
+        }
     }
-
 
     @Override
     public void dropUsersTable() {
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+        ) {
+            transaction = session.beginTransaction();
+            session.createSQLQuery(GetSQLQueryUsersTemplate.DROP_TABLE).executeUpdate();
+            transaction.commit();
 
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        session.createSQLQuery("DROP TABLE IF EXISTS Users").executeUpdate();
-        session.getTransaction().commit();
-        session.close();
-        System.out.println("Таблица удалена!");
+            System.out.println("Таблица 'users' успешно была удалена.");
+        } catch (Exception e) {
+            if (transaction != null)
+                transaction.rollback();
+
+            System.out.println("Проблема с удаление таблицы в Базе Данных.");
+            e.printStackTrace();
+        }
     }
 
     @Override
     public void saveUser(String name, String lastName, byte age) {
-        User user = new User(name, lastName, age);
-        Session session = null;
-        try {
-            session = sessionFactory.openSession();
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+        ) {
+            transaction = session.beginTransaction();
+            session.createSQLQuery(GetSQLQueryUsersTemplate.INSERT_ONE_USER)
+                    .setParameter(1, name)
+                    .setParameter(2, lastName)
+                    .setParameter(3, age)
+                    .executeUpdate();
+            transaction.commit();
 
-            session.beginTransaction();
-            session.save(user);
-            session.getTransaction().commit();
+            System.out.println("User с именем " + name + " успешно добавлен.");
         } catch (Exception e) {
-            assert session != null;
-            session.getTransaction().rollback();
-        } finally {
-            assert session != null;
-            session.close();
+            if (transaction != null)
+                transaction.rollback();
+
+            System.out.println("Произошли проблемы с добавлением User.");
+            e.printStackTrace();
         }
-        System.out.println("Пользователь с именем " + name + " успешно добавлен!");
     }
 
     @Override
     public void removeUserById(long id) {
-        Long myId = id;
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        User user = session.get(User.class, myId);
-        session.delete(user);
-        session.getTransaction().commit();
-        session.close();
+
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+        ) {
+
+            transaction = session.beginTransaction();
+            session.createSQLQuery(GetSQLQueryUsersTemplate.DELETE_USER_BY_ID)
+                    .setParameter(1, id)
+                    .executeUpdate();
+            transaction.commit();
+
+            System.out.println("Пользователь удален.");
+
+        } catch (Exception e) {
+            if (transaction != null)
+                transaction.rollback();
+
+            System.out.println("Произошла ошибка удаления пользователя.");
+            e.printStackTrace();
+        }
     }
 
     @Override
     public List<User> getAllUsers() {
-        List<User> userList;
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        userList = session.createQuery("from User ", User.class).getResultList();
-        session.getTransaction().commit();
-        session.close();
-        return userList;
+        List<User> list = new ArrayList<>();
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+                ScrollableResults result = session
+                        .createSQLQuery(GetSQLQueryUsersTemplate.SELECT_ALL_USERS)
+                        .scroll();
+        ) {
+            transaction = session.beginTransaction();
+            fillListUsers(result, list);
+            transaction.commit();
+        } catch (Exception e) {
+            if (transaction != null)
+                transaction.rollback();
+
+            System.out.println("Произошла ошибка получения пользователей.");
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    private void fillListUsers(ScrollableResults result, List<User> list) {
+        for (; result.next(); ) {
+            Object[] resultLine = result.get();
+
+            Long id = ((BigInteger) resultLine[0]).longValue();
+            String name = (String) resultLine[1];
+            String lastName = (String) resultLine[2];
+            Byte age = ((Short) resultLine[3]).byteValue();
+
+            User user = new User(name, lastName, age);
+            user.setId(id);
+
+            list.add(user);
+        }
     }
 
     @Override
     public void cleanUsersTable() {
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        session.createQuery("delete from User").executeUpdate();
-        session.getTransaction().commit();
-        session.close();
+        Transaction transaction = null;
+        try (
+                Session session = Util.getFactory().openSession();
+        ) {
+            transaction = session.beginTransaction();
+            session.createSQLQuery(GetSQLQueryUsersTemplate.DELETE_ALL_USERS).executeUpdate();
+            transaction.commit();
+
+            System.out.println("Таблица User успешно очищена.");
+        } catch (Exception e) {
+            if (transaction != null)
+                transaction.rollback();
+
+            System.out.println("Произошла ошибка очищения таблицы");
+            e.printStackTrace();
+        }
     }
 }
